@@ -1,6 +1,6 @@
 -module(main).
 
--export([hash_block/1, some_block/0, change_endianness/1]).
+-export([hash_block/1, some_block/0, change_endianness/1, count_trailing_zeros/1, proof_of_work/1]).
 
 -record(header, {prev_block_hash, difficulty_target, nonce, chain_state_root_hash, txns_root_hash}).
 
@@ -38,7 +38,7 @@ hash_block(#block{header = H}) ->
 
 some_header() ->
     #header{ prev_block_hash = <<1>>
-           , difficulty_target = 1
+           , difficulty_target = 2
            , nonce = 0
            , chain_state_root_hash = <<2>>
            , txns_root_hash = <<3>> }.
@@ -52,3 +52,30 @@ some_block() ->
 
 change_endianness(Bin) ->
     binary:list_to_bin(lists:reverse(binary:bin_to_list(Bin))).
+
+count_trailing_zeros(<<>>) ->
+    0;
+count_trailing_zeros(<<H,T/binary>>) ->
+    if
+        H == 0 ->
+            8 + count_trailing_zeros(<<T/binary>>);
+        H band 1 == 0 ->
+            NH = H bsr 1,
+            1 + count_trailing_zeros(<<NH, T/binary>>);
+        true ->
+            0
+    end.
+
+proof_of_work(Block) ->
+    Header = Block#block.header,
+    Nonce = Header#header.nonce,
+    Target = Header#header.difficulty_target,
+
+    Zeros = count_trailing_zeros(hash_block(Block)),
+
+    if
+        Zeros < Target ->
+            proof_of_work(Block#block{header = Header#header{nonce = Nonce + 1}});
+        true ->
+            Block
+    end.
