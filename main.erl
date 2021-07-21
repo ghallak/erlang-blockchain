@@ -14,7 +14,7 @@
 
 -type txn() :: #txn{ from   :: crypto:ecdh_public()
                    , to     :: crypto:ecdh_public()
-                   , amount :: float()
+                   , amount :: integer()
                    , sig    :: binary() }.
 
 -record(block, {header :: header(), txns :: list(txn())}).
