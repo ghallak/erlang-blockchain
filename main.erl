@@ -1,6 +1,17 @@
 -module(main).
 
--export([hash_block/1, some_block/0, change_endianness/1, count_trailing_zeros/1, proof_of_work/1]).
+-export([ hash_block/1
+        , some_block/0
+        , change_endianness/1
+        , count_trailing_zeros/1
+        , proof_of_work/1
+        , create_txn/4
+        , priv_key_1/0
+        , priv_key_2/0
+        , priv_to_pub/1
+        , some_txn/0
+        , validate_txn/1
+        ]).
 
 -record(header, {prev_block_hash, difficulty_target, nonce, chain_state_root_hash, txns_root_hash}).
 
@@ -79,3 +90,31 @@ proof_of_work(Block) ->
         true ->
             Block
     end.
+
+priv_key_1() ->
+    <<214,165,153,172,61,81,127,24,68,242,51,221,134,181,241,69>>.
+
+priv_key_2() ->
+    <<10,132,120,162,124,208,1,170,234,132,59,74,246,15,71,233>>.
+
+priv_to_pub(Priv) ->
+    element(1, crypto:generate_key(ecdh, secp256k1, Priv)).
+
+create_txn(From, To, Amount, Priv) ->
+    AmountBin = <<Amount:32>>,
+    Data = <<From/binary, To/binary, AmountBin/binary>>,
+    Sig = crypto:sign(ecdsa, sha256, Data, [Priv, secp256k1]),
+    #txn{from = From, to = To, amount = Amount, sig = Sig}.
+
+validate_txn(#txn{from = From, to = To, amount = Amount, sig = Sig}) ->
+    AmountBin = <<Amount:32>>,
+    Data = <<From/binary, To/binary, AmountBin/binary>>,
+    crypto:verify(ecdsa, sha256, Data, Sig, [priv_to_pub(priv_key_1()), secp256k1]).
+
+some_txn() ->
+    From = priv_to_pub(priv_key_1()),
+    To = priv_to_pub(priv_key_2()),
+    Amount = 50,
+    Priv = priv_key_1(),
+
+    create_txn(From, To, Amount, Priv).
