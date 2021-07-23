@@ -2,13 +2,9 @@
 -behavior(gen_server).
 
 -export([ hash_block/1
-        , some_block/0
         , change_endianness/1
         , count_trailing_zeros/1
         , proof_of_work/1
-        , priv_key_1/0
-        , priv_key_2/0
-        , priv_to_pub/1
         , validate_txn/2
         , init/1
         , start_link/0
@@ -124,7 +120,14 @@ start_link() ->
     gen_server:start_link({local, main}, main, [], []).
 
 init(_Args) ->
-    BlockChain = [],
+    Header = #header{ prev_block_hash       = <<0>>
+                    , difficulty_target     = ?DIFFICULTY_TARGET
+                    , nonce                 = 0
+                    , chain_state_root_hash = <<0>>
+                    , txns_root_hash        = <<0>>
+                    },
+    GenesisBlock = #block{header = Header, txns = []},
+    BlockChain = [GenesisBlock],
     TxnPool = [],
     ChainStateTree = gb_merkle_trees:empty(),
     {ok, {BlockChain, TxnPool, ChainStateTree}}.
