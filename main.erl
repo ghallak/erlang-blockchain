@@ -12,7 +12,6 @@
         , handle_cast/2
         , mine_block/2
         , create_txn/5
-        , create_dummy_txn/1
         , create_account/1
         ]).
 
@@ -53,20 +52,6 @@ hash_block(#block{header = H}) ->
 
     crypto:hash(sha256, crypto:hash(sha256, BlockBin)).
 
-some_header() ->
-    #header{ prev_block_hash = <<1>>
-           , difficulty_target = 2
-           , nonce = 0
-           , chain_state_root_hash = <<2>>
-           , txns_root_hash = <<3>> }.
-
-some_txns() ->
-    [].
-
-some_block() ->
-    #block{ header = some_header()
-          , txns = some_txns() }.
-
 change_endianness(Bin) ->
     binary:list_to_bin(lists:reverse(binary:bin_to_list(Bin))).
 
@@ -97,19 +82,10 @@ proof_of_work(Block) ->
             Block
     end.
 
-priv_key_1() ->
-    <<214,165,153,172,61,81,127,24,68,242,51,221,134,181,241,69>>.
-
-priv_key_2() ->
-    <<10,132,120,162,124,208,1,170,234,132,59,74,246,15,71,233>>.
-
-priv_to_pub(Priv) ->
-    element(1, crypto:generate_key(ecdh, secp256k1, Priv)).
-
 validate_txn(ChainStateTree, #txn{from = From, to = To, amount = Amount, sig = Sig}) ->
     AmountBin = <<Amount:32>>,
     Data = <<From/binary, To/binary, AmountBin/binary>>,
-    ValidSig = crypto:verify(ecdsa, sha256, Data, Sig, [priv_to_pub(priv_key_1()), secp256k1]),
+    ValidSig = crypto:verify(ecdsa, sha256, Data, Sig, [From, secp256k1]),
 
     FromBalance = binary:decode_unsigned(gb_merkle_trees:lookup(From, ChainStateTree)),
     ValidAmount = FromBalance >= Amount,
@@ -184,14 +160,6 @@ create_txn(From, To, Amount, Priv) ->
     Data = <<From/binary, To/binary, AmountBin/binary>>,
     Sig = crypto:sign(ecdsa, sha256, Data, [Priv, secp256k1]),
     #txn{from = From, to = To, amount = Amount, sig = Sig}.
-
-create_dummy_txn(Pid) ->
-    From = priv_to_pub(priv_key_1()),
-    To = priv_to_pub(priv_key_2()),
-    Amount = 50,
-    Priv = priv_key_1(),
-
-    create_txn(Pid, From, To, Amount, Priv).
 
 create_account(Pid) ->
     {PubKey, PrivKey} = crypto:generate_key(ecdh, secp256k1),
