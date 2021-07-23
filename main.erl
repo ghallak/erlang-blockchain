@@ -13,6 +13,7 @@
         , mine_block/2
         , create_txn/5
         , create_account/1
+        , get_balance/2
         ]).
 
 -define(DIFFICULTY_TARGET, 5).
@@ -108,34 +109,49 @@ init(_Args) ->
     ChainStateTree = gb_merkle_trees:empty(),
     {ok, {BlockChain, TxnPool, ChainStateTree}}.
 
+handle_call({get_balance, PubKey}, _From, {BlockChain, TxnPool, ChainStateTree}) ->
+    Balance = binary:decode_unsigned(gb_merkle_trees:lookup(PubKey, ChainStateTree)),
+    {reply, Balance, {BlockChain, TxnPool, ChainStateTree}};
 handle_call({new_account, PubKey, PrivKey}, _From, {BlockChain, TxnPool, ChainStateTree}) ->
     NewTree = gb_merkle_trees:enter(PubKey, binary:encode_unsigned(0), ChainStateTree),
     {reply, {PubKey, PrivKey}, {BlockChain, TxnPool, NewTree}};
 handle_call({new_txn, Txn}, _From, {BlockChain, TxnPool, ChainStateTree}) ->
     {reply, length(TxnPool), {BlockChain, TxnPool ++ [Txn], ChainStateTree}};
 handle_call({mine_block, PubKey}, _From, {BlockChain, TxnPool, ChainStateTree}) ->
-    P = fun(Tree, Txn) -> gb_merkle_trees:enter(Txn#txn.sig, binary:encode_unsigned(Txn#txn.amount), Tree) end,
+    P = fun(Txn, Tree) -> gb_merkle_trees:enter(Txn#txn.sig, binary:encode_unsigned(Txn#txn.amount), Tree) end,
     TxnsTree = lists:foldl(P, gb_merkle_trees:empty(), TxnPool),
+    TxnsRootHash =
+        if
+            TxnsTree == {0, empty} ->
+                <<0>>;
+            true ->
+                gb_merkle_trees:root_hash(TxnsTree)
+        end,
     Header = #header{ prev_block_hash       = hash_block(lists:last(BlockChain))
                     , difficulty_target     = ?DIFFICULTY_TARGET
                     , nonce                 = 0
                     , chain_state_root_hash = gb_merkle_trees:root_hash(ChainStateTree)
-                    , txns_root_hash        = gb_merkle_trees:root_hash(TxnsTree)
+                    , txns_root_hash        = TxnsRootHash
                     },
-    RewardTxn = #txn{from = undefined, to = PubKey, amount = ?REWARD_TOKENS, sig = undefined},
+    RewardTxn = #txn{from = <<0>>, to = PubKey, amount = ?REWARD_TOKENS, sig = <<0>>},
     NewTxns = TxnPool ++ [RewardTxn],
-    AllTxnsValid = lists:all(validate_txn, NewTxns),
+    AllTxnsValid = lists:all(fun(Txn) -> validate_txn(ChainStateTree, Txn) end, TxnPool),
     if
         AllTxnsValid ->
             NewBlock = proof_of_work(#block{header = Header, txns = NewTxns}),
-            F = fun(Tree, #txn{from = From, to = To, amount = Amount}) ->
-                    OldFromBalance = binary:decode_unsigned(gb_merkle_trees:lookup(From, Tree)),
-                    OldToBalance = binary:decode_unsigned(gb_merkle_trees:lookup(To, Tree)),
+            F = fun(#txn{from = From, to = To, amount = Amount}, Tree) ->
+                    if
+                        From /= <<0>> ->
+                            OldFromBalance = binary:decode_unsigned(gb_merkle_trees:lookup(From, Tree)),
+                            NewFromBalance = binary:encode_unsigned(OldFromBalance - Amount),
+                            T = gb_merkle_trees:enter(From, NewFromBalance, Tree);
+                        true ->
+                            T = Tree
+                    end,
 
-                    NewFromBalance = binary:encode_unsigned(OldFromBalance - Amount),
+                    OldToBalance = binary:decode_unsigned(gb_merkle_trees:lookup(To, Tree)),
                     NewToBalance = binary:encode_unsigned(OldToBalance + Amount),
 
-                    T = gb_merkle_trees:enter(From, NewFromBalance, Tree),
                     gb_merkle_trees:enter(To, NewToBalance, T)
                 end,
             NewChainStateTree = lists:foldl(F, ChainStateTree, NewTxns),
@@ -148,6 +164,9 @@ handle_call(_, _From, State) ->
 
 handle_cast({}, {BlockChain, TxnPool, ChainStateTree}) ->
     {noreply, {BlockChain, TxnPool, ChainStateTree}}.
+
+get_balance(Pid, PubKey) ->
+    gen_server:call(Pid, {get_balance, PubKey}).
 
 mine_block(Pid, PubKey) ->
     gen_server:call(Pid, {mine_block, PubKey}).
