@@ -1,3 +1,4 @@
+```erlang
 % Compile
 c(main).
 
@@ -24,3 +25,4 @@ main:mine_block(Pid, PubKey1).
 
 % Get the balance of the first account
 main:get_balance(Pid, PubKey1).
+```
